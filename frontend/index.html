@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buku Kas Digital - ICP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Kustomisasi default font Tailwind
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+          }
+        }
+      }
+    </script>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <div class="container mx-auto max-w-3xl p-4 sm:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900">📚 Buku Kas Digital</h1>
+            <p class="text-slate-600 mt-2">Dibangun di atas Internet Computer Protocol</p>
+        </header>
+
+        <main>
+            <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+                <h2 class="text-lg font-semibold text-slate-700 text-center">💰 Saldo Saat Ini</h2>
+                <p id="saldo" class="text-4xl font-bold text-center mt-2">Memuat...</p>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+                <h2 class="text-xl font-bold text-slate-900 mb-4">✍️ Catat Transaksi Baru</h2>
+                <form id="transaksiForm" class="space-y-4">
+                    <div>
+                        <label for="deskripsi" class="block text-sm font-medium text-slate-700 mb-1">Deskripsi</label>
+                        <input type="text" id="deskripsi" placeholder="Contoh: Gaji bulanan" required class="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="jumlah" class="block text-sm font-medium text-slate-700 mb-1">Jumlah</label>
+                        <input type="number" id="jumlah" placeholder="Contoh: 5000000" min="1" required class="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="tipe" class="block text-sm font-medium text-slate-700 mb-1">Tipe Transaksi</label>
+                        <select id="tipe" required class="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="Pemasukan">Pemasukan</option>
+                            <option value="Pengeluaran">Pengeluaran</option>
+                        </select>
+                    </div>
+                    <button type="submit" id="submitButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors">Simpan Transaksi</button>
+                </form>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md">
+                <h2 class="text-xl font-bold text-slate-900 p-6 border-b border-slate-200">📖 Riwayat Transaksi</h2>
+                <div id="riwayat" class="overflow-x-auto">
+                    <p class="p-6 text-slate-500">Memuat riwayat...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        import { Actor, HttpAgent } from "@dfinity/agent";
+        import { IDL } from "@dfinity/candid";
+
+        const canisterId = "rmulu-cqaaa-aaaau-acema-cai";
+        
+        // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+        // BAGIAN JAVASCRIPT INI TETAP SAMA, HANYA ADA SEDIKIT PENYESUAIAN
+        // PADA CARA MENGUBAH CLASSNAME UNTUK MENYESUAIKAN DENGAN TAILWIND
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        const idlFactory = ({ IDL }) => {
+            const TipeTransaksi = IDL.Variant({ 'Pemasukan' : IDL.Null, 'Pengeluaran' : IDL.Null });
+            const Transaksi = IDL.Record({ 'id' : IDL.Nat, 'waktu' : IDL.Int, 'deskripsi' : IDL.Text, 'jumlah' : IDL.Nat, 'tipe' : TipeTransaksi });
+            return IDL.Service({
+                'catatTransaksi' : IDL.Func([IDL.Text, IDL.Nat, TipeTransaksi], [Transaksi], []),
+                'hitungSaldo' : IDL.Func([], [IDL.Int], ['query']),
+                'lihatSemuaTransaksi' : IDL.Func([], [IDL.Vec(Transaksi)], ['query']),
+            });
+        };
+
+        const agent = new HttpAgent({ host: "https://icp-api.io" });
+        const bukuKasActor = Actor.createActor(idlFactory, { agent, canisterId });
+
+        const saldoEl = document.getElementById("saldo");
+        const riwayatEl = document.getElementById("riwayat");
+        const form = document.getElementById("transaksiForm");
+        const submitButton = document.getElementById("submitButton");
+
+        async function refreshData() {
+            saldoEl.innerText = "Menghitung...";
+            riwayatEl.innerHTML = `<p class="p-6 text-slate-500">Memuat riwayat...</p>`;
+
+            try {
+                const [saldoResult, transaksiResult] = await Promise.all([
+                    bukuKasActor.hitungSaldo(),
+                    bukuKasActor.lihatSemuaTransaksi()
+                ]);
+
+                // [PENYESUAIAN 1] Update kelas saldo dengan kelas Tailwind
+                const saldo = Number(saldoResult);
+                saldoEl.innerText = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(saldo);
+                saldoEl.className = `text-4xl font-bold text-center mt-2 ${saldo >= 0 ? 'text-green-600' : 'text-red-600'}`;
+                
+                let tableHtml = `
+                    <table class="w-full text-sm text-left text-slate-500">
+                        <thead class="text-xs text-slate-700 uppercase bg-slate-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3">Deskripsi</th>
+                                <th scope="col" class="px-6 py-3">Jumlah</th>
+                                <th scope="col" class="px-6 py-3">Tipe</th>
+                                <th scope="col" class="px-6 py-3">Waktu</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                transaksiResult.sort((a, b) => Number(b.id) - Number(a.id));
+
+                if (transaksiResult.length === 0) {
+                    tableHtml += `<tr><td colspan="4" class="px-6 py-4 text-center">Belum ada transaksi.</td></tr>`;
+                } else {
+                    transaksiResult.forEach(tx => {
+                        const tipeText = Object.keys(tx.tipe)[0];
+                        // [PENYESUAIAN 2] Update kelas tipe dengan kelas Tailwind
+                        const tipeClass = tipeText === 'Pemasukan' ? 'text-green-600' : 'text-red-600';
+                        const date = new Date(Number(tx.waktu) / 1000000);
+                        const formattedDate = date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+
+                        tableHtml += `
+                            <tr class="bg-white border-b hover:bg-slate-50">
+                                <td class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">${tx.deskripsi}</td>
+                                <td class="px-6 py-4">${new Intl.NumberFormat('id-ID').format(Number(tx.jumlah))}</td>
+                                <td class="px-6 py-4 font-medium ${tipeClass}">${tipeText}</td>
+                                <td class="px-6 py-4">${formattedDate}</td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                tableHtml += `</tbody></table>`;
+                riwayatEl.innerHTML = tableHtml;
+
+            } catch (error) {
+                console.error("Gagal mengambil data:", error);
+                saldoEl.innerText = "Error";
+                riwayatEl.innerHTML = `<p class="p-6 text-red-500">Gagal memuat data. Cek konsol untuk detail.</p>`;
+            }
+        }
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            submitButton.disabled = true;
+            submitButton.innerText = "Menyimpan...";
+            const deskripsi = document.getElementById("deskripsi").value;
+            const jumlah = BigInt(document.getElementById("jumlah").value);
+            const tipeValue = document.getElementById("tipe").value;
+            const tipe = { [tipeValue] : null };
+            
+            try {
+                await bukuKasActor.catatTransaksi(deskripsi, jumlah, tipe);
+                form.reset();
+                await refreshData();
+            } catch (error) {
+                console.error("Gagal menyimpan transaksi:", error);
+                alert("Terjadi error saat menyimpan. Silakan coba lagi.");
+            } finally {
+                submitButton.disabled = false;
+                submitButton.innerText = "Simpan Transaksi";
+            }
+        });
+        
+        refreshData();
+    </script>
+</body>
+</html>
